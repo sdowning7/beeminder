@@ -99,7 +99,7 @@ struct gattc_profile_inst {
 };
 
 struct sensor_data {
-    //TODO
+    unsigned long weight;
 };
 
 
@@ -473,14 +473,20 @@ static void get_sensor_data()
 {
     //TODO actually gether the data from sensors
     uint8_t Count[3] = {0};
+    unsigned long weight = 0
     vTaskDelay(1/portTICK_PERIOD_MS);
     for(char i = 0; i < 24; i++) {
         gpio_set_level(WEIGHT_CLK, 1);
         Count[i%8]=Count[i%8]<<1;
+        weight = weight<<1;
         gpio_set_level(WEIGHT_CLK, 0);
         Count[i%8]+=gpio_get_level(WEIGHT_GPIO);
+        weight+=gpio_get_level(WEIGHT_GPIO);
     }
     Count[0]=Count[0]^0x80;
+    weight = weight ^ 0x800000;
+
+    sensor_data.weight = weight;
 
     for (int i = 0; i < sizeof(write_data); i++)
     {
@@ -512,6 +518,9 @@ static void hive_report_task(void *params)
     while(1) {
 
         get_sensor_data();
+        ESP_LOGI(GATTC_TAG, "Sensor Data:\n weight %lu",
+                    sensor_data.weight);
+
         if (!can_send_write) {
             int res = xSemaphoreTake(gattc_semaphore, portMAX_DELAY);
             assert(res == pdTRUE);
