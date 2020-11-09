@@ -102,9 +102,9 @@ struct gattc_profile_inst {
 
 struct sensor_data {
     unsigned long weight;
-    //unsigned long temp;
-    //unsigned long humid;
-    //uint8_t[HIVE_WRITE_LEN] audio;
+    unsigned long temp;
+    unsigned long humid;
+    uint8_t[HIVE_WRITE_LEN] audio;
 };
 
 struct sensor_data data = {};
