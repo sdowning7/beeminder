@@ -55,6 +55,8 @@ static SemaphoreHandle_t gattc_semaphore;
 
 uint8_t write_data[HIVE_WRITE_LEN] =  {};
 
+
+
 /* Declare static functions */
 static void esp_gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param);
 static void esp_gattc_cb(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if, esp_ble_gattc_cb_param_t *param);
@@ -100,8 +102,12 @@ struct gattc_profile_inst {
 
 struct sensor_data {
     unsigned long weight;
+    //unsigned long temp;
+    //unsigned long humid;
+    //uint8_t[HIVE_WRITE_LEN] audio;
 };
 
+struct sensor_data data = {};
 
 /* One gatt-based profile one app_id and one gattc_if, this array will store the gattc_if returned by ESP_GATTS_REG_EVT */
 static struct gattc_profile_inst gl_profile_tab[PROFILE_NUM] = {
@@ -471,29 +477,20 @@ static void esp_gattc_cb(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if, esp
 
 static void get_sensor_data()
 {
-    //TODO actually gether the data from sensors
-    uint8_t Count[3] = {0};
-    unsigned long weight = 0
+    //gether the data from sensors
+
+    //weight sensor
+    unsigned long weight = 0;
     vTaskDelay(1/portTICK_PERIOD_MS);
     for(char i = 0; i < 24; i++) {
         gpio_set_level(WEIGHT_CLK, 1);
-        Count[i%8]=Count[i%8]<<1;
         weight = weight<<1;
         gpio_set_level(WEIGHT_CLK, 0);
-        Count[i%8]+=gpio_get_level(WEIGHT_GPIO);
         weight+=gpio_get_level(WEIGHT_GPIO);
     }
-    Count[0]=Count[0]^0x80;
     weight = weight ^ 0x800000;
 
-    sensor_data.weight = weight;
-
-    for (int i = 0; i < sizeof(write_data); i++)
-    {
-        if (i < sizeof(Count)) {
-            write_data[i] = Count[i];
-        }
-    } 
+    data.weight = weight;
 
 }
 
@@ -504,7 +501,8 @@ static bool send_data_to_server()
         esp_ble_gattc_write_char(gl_profile_tab[PROFILE_A_APP_ID].gattc_if,
                                         gl_profile_tab[PROFILE_A_APP_ID].conn_id,
                                         gl_profile_tab[PROFILE_A_APP_ID].char_handle,
-                                        sizeof(write_data), write_data,
+                                        sizeof(data), 
+                                        (uint8_t*)&data,
                                         ESP_GATT_WRITE_TYPE_NO_RSP,
                                         ESP_GATT_AUTH_REQ_NONE);
         return true;
@@ -519,7 +517,7 @@ static void hive_report_task(void *params)
 
         get_sensor_data();
         ESP_LOGI(GATTC_TAG, "Sensor Data:\n weight %lu",
-                    sensor_data.weight);
+                    data.weight);
 
         if (!can_send_write) {
             int res = xSemaphoreTake(gattc_semaphore, portMAX_DELAY);
