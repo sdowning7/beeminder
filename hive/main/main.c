@@ -38,7 +38,7 @@
 #define PROFILE_NUM      1
 #define PROFILE_A_APP_ID 0
 #define INVALID_HANDLE   0
-#define HIVE_WRITE_LEN 441000
+#define HIVE_AUDIO_READ_LEN 441000
 #define HIVE_TASK_PERIOD 1000*3
 #define HIVE_RETRY_PERIOD 1000
 
@@ -54,31 +54,6 @@ static bool is_connect = false;
 static esp_gattc_char_elem_t *char_elem_result   = NULL;
 static esp_gattc_descr_elem_t *descr_elem_result = NULL;
 static SemaphoreHandle_t gattc_semaphore;
-
-uint8_t write_data[HIVE_WRITE_LEN] =  {};
-
-//MEMS
-static const int i2s_num = 0; // i2s port number
-
-static const i2s_config_t i2s_config = {
-    .mode = I2S_MODE_MASTER | I2S_MODE_TX,
-    .sample_rate = 44100,
-    .bits_per_sample = 16,
-    .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
-    .communication_format = I2S_COMM_FORMAT_I2S,
-    .intr_alloc_flags = 0, // default interrupt priority
-    .dma_buf_count = 8,
-    .dma_buf_len = 64,
-    .use_apll = false
-};
-
-static const i2s_pin_config_t pin_config = {
-    .bck_io_num = 26, //ESP32 sends clock
-    .ws_io_num = I2S_PIN_NO_CHANGE,
-    .data_out_num = I2S_PIN_NO_CHANGE,
-    .data_in_num = 22 //ESP32 takes in data
-};
-
 
 
 /* Declare static functions */
@@ -124,14 +99,37 @@ struct gattc_profile_inst {
     esp_bd_addr_t remote_bda;
 };
 
+//MEMS
+static const int i2s_num = 0; // i2s port number
+
+static const i2s_config_t i2s_config = {
+    .mode = I2S_MODE_MASTER | I2S_MODE_RX,
+    .sample_rate = 44100,
+    .bits_per_sample = 16,
+    .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
+    .communication_format = I2S_COMM_FORMAT_I2S,
+    .intr_alloc_flags = 0, // default interrupt priority
+    .dma_buf_count = 8,
+    .dma_buf_len = 64,
+    .use_apll = false
+};
+
+static const i2s_pin_config_t pin_config = {
+    .bck_io_num = 26, //ESP32 sends clock
+    .ws_io_num = I2S_PIN_NO_CHANGE,
+    .data_out_num = I2S_PIN_NO_CHANGE,
+    .data_in_num = 22 //ESP32 takes in data
+};
+
+
 struct sensor_data {
     unsigned long weight;
     unsigned long temp;
     unsigned long humid;
-    uint8_t[HIVE_WRITE_LEN] audio;
 };
 
 struct sensor_data data = {};
+uint8_t* audio_data;
 
 /* One gatt-based profile one app_id and one gattc_if, this array will store the gattc_if returned by ESP_GATTS_REG_EVT */
 static struct gattc_profile_inst gl_profile_tab[PROFILE_NUM] = {
@@ -516,9 +514,8 @@ static void get_sensor_data()
 
     data.weight = weight;
 
-    size_t bytesread;
-    i2s_read(i2s_num, (void*)data.audio, 441000, &bytesread, portMAX_DELAY);
-    i2s_driver_uninstall(i2s_num); //stop & destroy i2s driver
+    size_t bytes_read;
+    i2s_read(i2s_num, (void*)audio_data, HIVE_AUDIO_READ_LEN, &bytes_read, portMAX_DELAY);
 
 }
 
@@ -533,6 +530,13 @@ static bool send_data_to_server()
                                         (uint8_t*)&data,
                                         ESP_GATT_WRITE_TYPE_NO_RSP,
                                         ESP_GATT_AUTH_REQ_NONE);
+        esp_ble_gattc_write_char(gl_profile_tab[PROFILE_A_APP_ID].gattc_if,
+                                        gl_profile_tab[PROFILE_A_APP_ID].conn_id,
+                                        gl_profile_tab[PROFILE_A_APP_ID].char_handle,
+                                        sizeof(data), 
+                                        audio_data,
+                                        ESP_GATT_WRITE_TYPE_NO_RSP,
+                                        ESP_GATT_AUTH_REQ_NONE);
         return true;
     } else {
         return false;
@@ -544,8 +548,7 @@ static void hive_report_task(void *params)
     while(1) {
 
         get_sensor_data();
-        ESP_LOGI(GATTC_TAG, "Sensor Data:\n weight %lu",
-                    data.weight);
+        //ESP_LOGI(GATTC_TAG, "Sensor Data:\n weight %lu", data.weight);
 
         if (!can_send_write) {
             int res = xSemaphoreTake(gattc_semaphore, portMAX_DELAY);
@@ -633,6 +636,7 @@ void app_main(void)
     i2s_driver_install(i2s_num, &i2s_config, 0, NULL);   //install and start i2s driver
     i2s_set_pin(i2s_num, &pin_config);
     i2s_set_sample_rates(i2s_num, 22050); //set sample rates
+    audio_data = (uint8_t*) calloc(HIVE_AUDIO_READ_LEN, sizeof(uint8_t)); 
    
     xTaskCreate(&hive_report_task, "hive_report_task", 4096, NULL, 3, NULL);
 
