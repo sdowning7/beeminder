@@ -28,6 +28,8 @@
 #include "esp_log.h"
 #include "driver/uart.h"
 #include "driver/rtc_io.h"
+#include "driver/i2s.h"
+#include "freertos/queue.h"
 
 
 #define GATTC_TAG "HIVE_CLIENT"
@@ -36,7 +38,7 @@
 #define PROFILE_NUM      1
 #define PROFILE_A_APP_ID 0
 #define INVALID_HANDLE   0
-#define HIVE_WRITE_LEN 490
+#define HIVE_WRITE_LEN 441000
 #define HIVE_TASK_PERIOD 1000*3
 #define HIVE_RETRY_PERIOD 1000
 
@@ -54,6 +56,28 @@ static esp_gattc_descr_elem_t *descr_elem_result = NULL;
 static SemaphoreHandle_t gattc_semaphore;
 
 uint8_t write_data[HIVE_WRITE_LEN] =  {};
+
+//MEMS
+static const int i2s_num = 0; // i2s port number
+
+static const i2s_config_t i2s_config = {
+    .mode = I2S_MODE_MASTER | I2S_MODE_TX,
+    .sample_rate = 44100,
+    .bits_per_sample = 16,
+    .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
+    .communication_format = I2S_COMM_FORMAT_I2S,
+    .intr_alloc_flags = 0, // default interrupt priority
+    .dma_buf_count = 8,
+    .dma_buf_len = 64,
+    .use_apll = false
+};
+
+static const i2s_pin_config_t pin_config = {
+    .bck_io_num = 26, //ESP32 sends clock
+    .ws_io_num = I2S_PIN_NO_CHANGE,
+    .data_out_num = I2S_PIN_NO_CHANGE,
+    .data_in_num = 22 //ESP32 takes in data
+};
 
 
 
@@ -492,6 +516,10 @@ static void get_sensor_data()
 
     data.weight = weight;
 
+    size_t bytesread;
+    i2s_read(i2s_num, (void*)data.audio, 441000, &bytesread, portMAX_DELAY);
+    i2s_driver_uninstall(i2s_num); //stop & destroy i2s driver
+
 }
 
 static bool send_data_to_server()
@@ -602,6 +630,10 @@ void app_main(void)
     gpio_pad_select_gpio(WEIGHT_CLK);
     gpio_set_direction(WEIGHT_CLK, GPIO_MODE_OUTPUT);
 
+    i2s_driver_install(i2s_num, &i2s_config, 0, NULL);   //install and start i2s driver
+    i2s_set_pin(i2s_num, &pin_config);
+    i2s_set_sample_rates(i2s_num, 22050); //set sample rates
+   
     xTaskCreate(&hive_report_task, "hive_report_task", 4096, NULL, 3, NULL);
 
     gattc_semaphore = xSemaphoreCreateBinary();
