@@ -139,7 +139,7 @@ typedef struct {
 }sensor_data;
 
 sensor_data data = {};
-uint8_t* audio_data;
+//uint8_t* audio_data;
 int flash_wr_size = 0;
 
 /* One gatt-based profile one app_id and one gattc_if, this array will store the gattc_if returned by ESP_GATTS_REG_EVT */
@@ -621,6 +621,8 @@ static void get_sensor_data()
     weight = weight ^ 0x800000;
 
     data.weight = weight;    
+    data.temp = 0x11111111;
+    data.humid = 0xFFFFFFFF;
     //Record the audio data to flash
     record_audio_to_flash();
 
