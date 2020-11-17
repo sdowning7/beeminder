@@ -32,18 +32,28 @@
 #include "freertos/queue.h"
 
 
-#define GATTC_TAG "HIVE_CLIENT"
-#define REMOTE_SERVICE_UUID        0x00FF
-#define REMOTE_NOTIFY_CHAR_UUID    0xFF01
-#define PROFILE_NUM      1
-#define PROFILE_A_APP_ID 0
-#define INVALID_HANDLE   0
-#define HIVE_AUDIO_READ_LEN 441000
-#define HIVE_TASK_PERIOD 1000*3
-#define HIVE_RETRY_PERIOD 1000
+#define GATTC_TAG                   "HIVE_CLIENT"
+#define REMOTE_SERVICE_UUID         0x00FF
+#define REMOTE_NOTIFY_CHAR_UUID     0xFF01
+#define PROFILE_NUM                 1
+#define PROFILE_A_APP_ID            0
+#define INVALID_HANDLE              0
+#define HIVE_TASK_PERIOD            10000*3
+#define HIVE_RETRY_PERIOD           1000
 
-#define WEIGHT_GPIO 18
-#define WEIGHT_CLK 19
+#define WEIGHT_GPIO                 18
+#define WEIGHT_CLK                  19
+
+#define I2S_SAMPLE_RATE             44100
+#define I2S_SAMPLE_BITS             16
+#define I2S_READ_LEN                16*1024
+
+#define FLASH_SECTOR_SIZE           (0x1000)
+#define FLASH_ADDR                  (0x200000)
+
+#define FLASH_RECORD_SIZE           (I2S_SAMPLE_RATE*I2S_SAMPLE_BITS/8*5)
+#define FLASH_ERASE_SIZE            (FLASH_RECORD_SIZE%FLASH_SECTOR_SIZE==0) ? FLASH_RECORD_SIZE : FLASH_RECORD_SIZE + (FLASH_SECTOR_SIZE - FLASH_RECORD_SIZE % FLASH_SECTOR_SIZE)
+#define PARTITION_NAME              "storage"
 
 static const char remote_device_name[] = "HIVE_SERVER";
 static bool connect    = false;
@@ -104,14 +114,14 @@ static const int i2s_num = 0; // i2s port number
 
 static const i2s_config_t i2s_config = {
     .mode = I2S_MODE_MASTER | I2S_MODE_RX,
-    .sample_rate = 44100,
-    .bits_per_sample = 16,
+    .sample_rate = I2S_SAMPLE_RATE,
+    .bits_per_sample = I2S_SAMPLE_BITS,
     .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
     .communication_format = I2S_COMM_FORMAT_I2S,
     .intr_alloc_flags = 0, // default interrupt priority
     .dma_buf_count = 8,
     .dma_buf_len = 64,
-    .use_apll = false
+    .use_apll = true
 };
 
 static const i2s_pin_config_t pin_config = {
@@ -122,14 +132,15 @@ static const i2s_pin_config_t pin_config = {
 };
 
 
-struct sensor_data {
+typedef struct {
     unsigned long weight;
     unsigned long temp;
     unsigned long humid;
-};
+}sensor_data;
 
-struct sensor_data data = {};
+sensor_data data = {};
 uint8_t* audio_data;
+int flash_wr_size = 0;
 
 /* One gatt-based profile one app_id and one gattc_if, this array will store the gattc_if returned by ESP_GATTS_REG_EVT */
 static struct gattc_profile_inst gl_profile_tab[PROFILE_NUM] = {
@@ -497,6 +508,103 @@ static void esp_gattc_cb(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if, esp
     } while (0);
 }
 
+void erase_flash(void) {
+    const esp_partition_t *data_partition = NULL;
+    data_partition = esp_partition_find_first(ESP_PARTITION_TYPE_DATA,
+            ESP_PARTITION_SUBTYPE_DATA_FAT, PARTITION_NAME);
+    if (data_partition != NULL) {
+        printf("partiton addr: 0x%08x; size: %d; label: %s\n", data_partition->address, data_partition->size, data_partition->label);
+    }
+    printf("Erase size: %d Bytes\n", FLASH_ERASE_SIZE);
+    ESP_ERROR_CHECK(esp_partition_erase_range(data_partition, 0, FLASH_ERASE_SIZE));
+}
+
+void record_audio_to_flash() {
+    const esp_partition_t *data_partition = NULL;
+    data_partition = esp_partition_find_first(ESP_PARTITION_TYPE_DATA,
+            ESP_PARTITION_SUBTYPE_DATA_FAT, PARTITION_NAME);
+    if (data_partition != NULL) {
+        printf("partiton addr: 0x%08x; size: %d; label: %s\n", data_partition->address, data_partition->size, data_partition->label);
+    } else {
+        ESP_LOGE(GATTC_TAG, "Partition error: can't find partition name: %s\n", PARTITION_NAME);
+        vTaskDelete(NULL);
+    }
+    //1. Erase flash
+    erase_flash();
+    int i2s_read_len = I2S_READ_LEN;
+    flash_wr_size = 0;
+    size_t bytes_read;
+
+    char* i2s_read_buff = (char*) calloc(i2s_read_len, sizeof(char));
+    uint8_t* flash_write_buff = (uint8_t*) calloc(i2s_read_len, sizeof(char));
+    
+    //i2s_adc_enable(EXAMPLE_I2S_NUM);
+    
+    while (flash_wr_size < FLASH_RECORD_SIZE) {
+        //read data from I2S bus, in this case, from ADC.
+        i2s_read(i2s_num, (void*) i2s_read_buff, i2s_read_len, &bytes_read, portMAX_DELAY);
+        
+        //example_disp_buf((uint8_t*) i2s_read_buff, 64);
+        //save original data from I2S(ADC) into flash.
+        esp_partition_write(data_partition, flash_wr_size, i2s_read_buff, i2s_read_len);
+        flash_wr_size += i2s_read_len;
+        ets_printf("Sound recording %u%%\n", flash_wr_size * 100 / FLASH_RECORD_SIZE);
+    }
+    
+    //i2s_adc_disable(EXAMPLE_I2S_NUM);
+
+    free(i2s_read_buff);
+    i2s_read_buff = NULL;
+    free(flash_write_buff);
+    flash_write_buff = NULL;
+}
+
+void send_audio_from_flash() {
+    int i2s_read_len = I2S_READ_LEN;
+    uint8_t* flash_read_buff = (uint8_t*) calloc(i2s_read_len, sizeof(char));
+    //uint8_t* i2s_write_buff = (uint8_t*) calloc(i2s_read_len, sizeof(char));
+
+
+    const esp_partition_t *data_partition = NULL;
+    data_partition = esp_partition_find_first(ESP_PARTITION_TYPE_DATA,
+            ESP_PARTITION_SUBTYPE_DATA_FAT, PARTITION_NAME);
+    if (data_partition != NULL) {
+        printf("partiton addr: 0x%08x; size: %d; label: %s\n", data_partition->address, data_partition->size, data_partition->label);
+    } else {
+        ESP_LOGE(GATTC_TAG, "Partition error: can't find partition name: %s\n", PARTITION_NAME);
+        vTaskDelete(NULL);
+    }
+
+    for (int rd_offset = 0; rd_offset < flash_wr_size; rd_offset += FLASH_SECTOR_SIZE) {
+            //read I2S(ADC) original data from flash
+            esp_partition_read(data_partition, rd_offset, flash_read_buff, FLASH_SECTOR_SIZE);
+            //process data and scale to 8bit for I2S DAC.
+            //example_i2s_adc_data_scale(i2s_write_buff, flash_read_buff, FLASH_SECTOR_SIZE);
+            //send data
+            //i2s_write(EXAMPLE_I2S_NUM, i2s_write_buff, FLASH_SECTOR_SIZE, &bytes_written, portMAX_DELAY);
+            bool sent = false;
+            while(!sent) {
+                int free_buff_num = esp_ble_get_cur_sendable_packets_num(gl_profile_tab[PROFILE_A_APP_ID].conn_id);
+                if(free_buff_num > 0){
+
+                    esp_ble_gattc_write_char(gl_profile_tab[PROFILE_A_APP_ID].gattc_if,
+                                                    gl_profile_tab[PROFILE_A_APP_ID].conn_id,
+                                                    gl_profile_tab[PROFILE_A_APP_ID].char_handle,
+                                                    i2s_read_len, 
+                                                    flash_read_buff,
+                                                    ESP_GATT_WRITE_TYPE_NO_RSP,
+                                                    ESP_GATT_AUTH_REQ_NONE);
+                    printf("playing: %d %%\n", rd_offset * 100 / flash_wr_size);
+                    sent = true;
+                }
+                else {
+                    printf("waiting...\n");
+                    vTaskDelay(HIVE_RETRY_PERIOD / portTICK_PERIOD_MS);
+                }
+            }
+    }
+}
+
 static void get_sensor_data()
 {
     //gether the data from sensors
@@ -512,10 +620,9 @@ static void get_sensor_data()
     }
     weight = weight ^ 0x800000;
 
-    data.weight = weight;
-
-    size_t bytes_read;
-    i2s_read(i2s_num, (void*)audio_data, HIVE_AUDIO_READ_LEN, &bytes_read, portMAX_DELAY);
+    data.weight = weight;    
+    //Record the audio data to flash
+    record_audio_to_flash();
 
 }
 
@@ -530,13 +637,14 @@ static bool send_data_to_server()
                                         (uint8_t*)&data,
                                         ESP_GATT_WRITE_TYPE_NO_RSP,
                                         ESP_GATT_AUTH_REQ_NONE);
-        esp_ble_gattc_write_char(gl_profile_tab[PROFILE_A_APP_ID].gattc_if,
-                                        gl_profile_tab[PROFILE_A_APP_ID].conn_id,
-                                        gl_profile_tab[PROFILE_A_APP_ID].char_handle,
-                                        sizeof(data), 
-                                        audio_data,
-                                        ESP_GATT_WRITE_TYPE_NO_RSP,
-                                        ESP_GATT_AUTH_REQ_NONE);
+        //send_audio_from_flash();
+        // esp_ble_gattc_write_char(gl_profile_tab[PROFILE_A_APP_ID].gattc_if,
+        //                                 gl_profile_tab[PROFILE_A_APP_ID].conn_id,
+        //                                 gl_profile_tab[PROFILE_A_APP_ID].char_handle,
+        //                                 sizeof(data), 
+        //                                 audio_data,
+        //                                 ESP_GATT_WRITE_TYPE_NO_RSP,
+        //                                 ESP_GATT_AUTH_REQ_NONE);
         return true;
     } else {
         return false;
@@ -636,7 +744,11 @@ void app_main(void)
     i2s_driver_install(i2s_num, &i2s_config, 0, NULL);   //install and start i2s driver
     i2s_set_pin(i2s_num, &pin_config);
     i2s_set_sample_rates(i2s_num, 22050); //set sample rates
-    audio_data = (uint8_t*) calloc(HIVE_AUDIO_READ_LEN, sizeof(uint8_t)); 
+    // audio_data = (uint8_t*) malloc(HIVE_AUDIO_READ_LEN); 
+    // if (audio_data == 0) {
+    //     ESP_LOGI(GATTC_TAG, "MALLOC FAILED");
+    //     return;
+    // }
    
     xTaskCreate(&hive_report_task, "hive_report_task", 4096, NULL, 3, NULL);
 
