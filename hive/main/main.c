@@ -38,13 +38,15 @@
 #define PROFILE_NUM                 1
 #define PROFILE_A_APP_ID            0
 #define INVALID_HANDLE              0
-#define HIVE_TASK_PERIOD            10000*3
+#define MAX_SEND                    496
+
+#define HIVE_TASK_PERIOD            1000*30
 #define HIVE_RETRY_PERIOD           1000
 
 #define WEIGHT_GPIO                 18
 #define WEIGHT_CLK                  19
 
-#define I2S_SAMPLE_RATE             44100
+#define I2S_SAMPLE_RATE             16000
 #define I2S_SAMPLE_BITS             16
 #define I2S_READ_LEN                16*1024
 
@@ -71,7 +73,11 @@ static void esp_gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *par
 static void esp_gattc_cb(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if, esp_ble_gattc_cb_param_t *param);
 static void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if, esp_ble_gattc_cb_param_t *param);
 static void get_sensor_data();
-static bool send_data_to_server();
+static void send_data_to_server();
+static void safe_send(uint16_t dsize, uint8_t* daddr);
+void erase_flash(void);
+void record_audio_to_flash();
+void send_audio_from_flash();
 
 
 static esp_bt_uuid_t remote_filter_service_uuid = {
@@ -333,16 +339,9 @@ static void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_
         }
         esp_log_buffer_hex(GATTC_TAG, p_data->notify.value, p_data->notify.value_len);
         
-        //Try once
-        get_sensor_data();
-        bool sent = send_data_to_server();
-        //If that didn't work keep trying with a delay
-        while(!sent){
-            get_sensor_data();
-            sent = send_data_to_server();
-            vTaskDelay(HIVE_RETRY_PERIOD / portTICK_PERIOD_MS);
-        }
-        ESP_LOGI(GATTC_TAG, "ESP_GATTC_NOTIFY_EVT, response sent");
+        //Try send once
+        //get_sensor_data();
+        //TODO this wasnt working, need to fix.
         break;
     }
     case ESP_GATTC_WRITE_DESCR_EVT:{
@@ -508,14 +507,45 @@ static void esp_gattc_cb(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if, esp
     } while (0);
 }
 
+static void safe_send(uint16_t dsize, uint8_t* daddr) {
+    while(1){
+       
+        if (!can_send_write) {
+            int res = xSemaphoreTake(gattc_semaphore, portMAX_DELAY); 
+            assert(res == pdTRUE);
+        } 
+        else {
+            if (is_connect) {
+                int free_buff_num = esp_ble_get_cur_sendable_packets_num(gl_profile_tab[PROFILE_A_APP_ID].conn_id);
+                if(free_buff_num > 0) {                  
+                    esp_ble_gattc_write_char(gl_profile_tab[PROFILE_A_APP_ID].gattc_if,
+                                                    gl_profile_tab[PROFILE_A_APP_ID].conn_id,
+                                                    gl_profile_tab[PROFILE_A_APP_ID].char_handle,
+                                                    dsize, 
+                                                    daddr,
+                                                    ESP_GATT_WRITE_TYPE_NO_RSP,
+                                                    ESP_GATT_AUTH_REQ_NONE);
+                    break;
+                } else {   
+                    vTaskDelay( 10 / portTICK_PERIOD_MS );
+                }
+                
+            }
+            
+        }
+    }
+}
+
 void erase_flash(void) {
     const esp_partition_t *data_partition = NULL;
     data_partition = esp_partition_find_first(ESP_PARTITION_TYPE_DATA,
             ESP_PARTITION_SUBTYPE_DATA_FAT, PARTITION_NAME);
     if (data_partition != NULL) {
-        printf("partiton addr: 0x%08x; size: %d; label: %s\n", data_partition->address, data_partition->size, data_partition->label);
+        //printf("partiton addr: 0x%08x; size: %d; label: %s\n", data_partition->address, data_partition->size, data_partition->label);
+        ESP_LOGI(GATTC_TAG, "partiton addr: 0x%08x; size: %d; label: %s\n", data_partition->address, data_partition->size, data_partition->label);
     }
-    printf("Erase size: %d Bytes\n", FLASH_ERASE_SIZE);
+    //printf("Erase size: %d Bytes\n", FLASH_ERASE_SIZE);
+    ESP_LOGI(GATTC_TAG, "Erase size: %d Bytes\n", FLASH_ERASE_SIZE);
     ESP_ERROR_CHECK(esp_partition_erase_range(data_partition, 0, FLASH_ERASE_SIZE));
 }
 
@@ -524,7 +554,8 @@ void record_audio_to_flash() {
     data_partition = esp_partition_find_first(ESP_PARTITION_TYPE_DATA,
             ESP_PARTITION_SUBTYPE_DATA_FAT, PARTITION_NAME);
     if (data_partition != NULL) {
-        printf("partiton addr: 0x%08x; size: %d; label: %s\n", data_partition->address, data_partition->size, data_partition->label);
+        //printf("partiton addr: 0x%08x; size: %d; label: %s\n", data_partition->address, data_partition->size, data_partition->label);
+        ESP_LOGI(GATTC_TAG, "partiton addr: 0x%08x; size: %d; label: %s\n", data_partition->address, data_partition->size, data_partition->label);
     } else {
         ESP_LOGE(GATTC_TAG, "Partition error: can't find partition name: %s\n", PARTITION_NAME);
         vTaskDelete(NULL);
@@ -539,7 +570,7 @@ void record_audio_to_flash() {
     uint8_t* flash_write_buff = (uint8_t*) calloc(i2s_read_len, sizeof(char));
     
     //i2s_adc_enable(EXAMPLE_I2S_NUM);
-    
+    ESP_LOGI(GATTC_TAG, "Recording start");
     while (flash_wr_size < FLASH_RECORD_SIZE) {
         //read data from I2S bus, in this case, from ADC.
         i2s_read(i2s_num, (void*) i2s_read_buff, i2s_read_len, &bytes_read, portMAX_DELAY);
@@ -548,9 +579,9 @@ void record_audio_to_flash() {
         //save original data from I2S(ADC) into flash.
         esp_partition_write(data_partition, flash_wr_size, i2s_read_buff, i2s_read_len);
         flash_wr_size += i2s_read_len;
-        ets_printf("Sound recording %u%%\n", flash_wr_size * 100 / FLASH_RECORD_SIZE);
+        //ets_printf("Sound recording %u%%\n", flash_wr_size * 100 / FLASH_RECORD_SIZE);
     }
-    
+    ESP_LOGI(GATTC_TAG, "Recording complete");
     //i2s_adc_disable(EXAMPLE_I2S_NUM);
 
     free(i2s_read_buff);
@@ -560,8 +591,8 @@ void record_audio_to_flash() {
 }
 
 void send_audio_from_flash() {
-    int i2s_read_len = I2S_READ_LEN;
-    uint8_t* flash_read_buff = (uint8_t*) calloc(i2s_read_len, sizeof(char));
+    //int i2s_read_len = I2S_READ_LEN;
+    uint8_t* flash_read_buff = (uint8_t*) calloc(MAX_SEND, sizeof(char));
     //uint8_t* i2s_write_buff = (uint8_t*) calloc(i2s_read_len, sizeof(char));
 
 
@@ -569,40 +600,44 @@ void send_audio_from_flash() {
     data_partition = esp_partition_find_first(ESP_PARTITION_TYPE_DATA,
             ESP_PARTITION_SUBTYPE_DATA_FAT, PARTITION_NAME);
     if (data_partition != NULL) {
-        printf("partiton addr: 0x%08x; size: %d; label: %s\n", data_partition->address, data_partition->size, data_partition->label);
+        //printf("partiton addr: 0x%08x; size: %d; label: %s\n", data_partition->address, data_partition->size, data_partition->label);
+        ESP_LOGI(GATTC_TAG, "partiton addr: 0x%08x; size: %d; label: %s\n", data_partition->address, data_partition->size, data_partition->label);
     } else {
         ESP_LOGE(GATTC_TAG, "Partition error: can't find partition name: %s\n", PARTITION_NAME);
         vTaskDelete(NULL);
     }
+    ESP_LOGI(GATTC_TAG,"Sending from flash start");
+    for (int rd_offset = 0; rd_offset < flash_wr_size; rd_offset += MAX_SEND) {
+        //read I2S(ADC) original data from flash
+        esp_partition_read(data_partition, rd_offset, flash_read_buff, MAX_SEND);
+        //process data and scale to 8bit for I2S DAC.
+        //example_i2s_adc_data_scale(i2s_write_buff, flash_read_buff, FLASH_SECTOR_SIZE);
+        //send data
+        //i2s_write(EXAMPLE_I2S_NUM, i2s_write_buff, FLASH_SECTOR_SIZE, &bytes_written, portMAX_DELAY);
+        safe_send(MAX_SEND, flash_read_buff);
 
-    for (int rd_offset = 0; rd_offset < flash_wr_size; rd_offset += FLASH_SECTOR_SIZE) {
-            //read I2S(ADC) original data from flash
-            esp_partition_read(data_partition, rd_offset, flash_read_buff, FLASH_SECTOR_SIZE);
-            //process data and scale to 8bit for I2S DAC.
-            //example_i2s_adc_data_scale(i2s_write_buff, flash_read_buff, FLASH_SECTOR_SIZE);
-            //send data
-            //i2s_write(EXAMPLE_I2S_NUM, i2s_write_buff, FLASH_SECTOR_SIZE, &bytes_written, portMAX_DELAY);
-            bool sent = false;
-            while(!sent) {
-                int free_buff_num = esp_ble_get_cur_sendable_packets_num(gl_profile_tab[PROFILE_A_APP_ID].conn_id);
-                if(free_buff_num > 0){
+        // bool sent = false;
+        // while(!sent) {
+        //     int free_buff_num = esp_ble_get_cur_sendable_packets_num(gl_profile_tab[PROFILE_A_APP_ID].conn_id);
+        //     if(free_buff_num > 0){
 
-                    esp_ble_gattc_write_char(gl_profile_tab[PROFILE_A_APP_ID].gattc_if,
-                                                    gl_profile_tab[PROFILE_A_APP_ID].conn_id,
-                                                    gl_profile_tab[PROFILE_A_APP_ID].char_handle,
-                                                    i2s_read_len, 
-                                                    flash_read_buff,
-                                                    ESP_GATT_WRITE_TYPE_NO_RSP,
-                                                    ESP_GATT_AUTH_REQ_NONE);
-                    printf("playing: %d %%\n", rd_offset * 100 / flash_wr_size);
-                    sent = true;
-                }
-                else {
-                    printf("waiting...\n");
-                    vTaskDelay(HIVE_RETRY_PERIOD / portTICK_PERIOD_MS);
-                }
-            }
+        //         esp_ble_gattc_write_char(gl_profile_tab[PROFILE_A_APP_ID].gattc_if,
+        //                                         gl_profile_tab[PROFILE_A_APP_ID].conn_id,
+        //                                         gl_profile_tab[PROFILE_A_APP_ID].char_handle,
+        //                                         i2s_read_len, 
+        //                                         flash_read_buff,
+        //                                         ESP_GATT_WRITE_TYPE_NO_RSP,
+        //                                         ESP_GATT_AUTH_REQ_NONE);
+        //         printf("playing: %d %%\n", rd_offset * 100 / flash_wr_size);
+        //         sent = true;
+        //     }
+        //     else {
+        //         printf("waiting...\n");
+        //         vTaskDelay(HIVE_RETRY_PERIOD / portTICK_PERIOD_MS);
+        //     }
+        // }
     }
+    ESP_LOGI(GATTC_TAG,"Sending from flash end");
 }
 
 static void get_sensor_data()
@@ -628,51 +663,38 @@ static void get_sensor_data()
 
 }
 
-static bool send_data_to_server()
-{
-    int free_buff_num = esp_ble_get_cur_sendable_packets_num(gl_profile_tab[PROFILE_A_APP_ID].conn_id);
-    if(free_buff_num > 0) {                    
-        esp_ble_gattc_write_char(gl_profile_tab[PROFILE_A_APP_ID].gattc_if,
-                                        gl_profile_tab[PROFILE_A_APP_ID].conn_id,
-                                        gl_profile_tab[PROFILE_A_APP_ID].char_handle,
-                                        sizeof(data), 
-                                        (uint8_t*)&data,
-                                        ESP_GATT_WRITE_TYPE_NO_RSP,
-                                        ESP_GATT_AUTH_REQ_NONE);
-        //send_audio_from_flash();
-        // esp_ble_gattc_write_char(gl_profile_tab[PROFILE_A_APP_ID].gattc_if,
-        //                                 gl_profile_tab[PROFILE_A_APP_ID].conn_id,
-        //                                 gl_profile_tab[PROFILE_A_APP_ID].char_handle,
-        //                                 sizeof(data), 
-        //                                 audio_data,
-        //                                 ESP_GATT_WRITE_TYPE_NO_RSP,
-        //                                 ESP_GATT_AUTH_REQ_NONE);
-        return true;
-    } else {
-        return false;
-    }
+static void send_data_to_server()
+{             
+       
+    safe_send(sizeof(data), (uint8_t*)&data);
+    send_audio_from_flash();
+    
+    
+    // esp_ble_gattc_write_char(gl_profile_tab[PROFILE_A_APP_ID].gattc_if,
+    //                                 gl_profile_tab[PROFILE_A_APP_ID].conn_id,
+    //                                 gl_profile_tab[PROFILE_A_APP_ID].char_handle,
+    //                                 sizeof(data), 
+    //                                 (uint8_t*)&data,
+    //                                 ESP_GATT_WRITE_TYPE_NO_RSP,
+    //                                 ESP_GATT_AUTH_REQ_NONE);
+    // esp_ble_gattc_write_char(gl_profile_tab[PROFILE_A_APP_ID].gattc_if,
+    //                                 gl_profile_tab[PROFILE_A_APP_ID].conn_id,
+    //                                 gl_profile_tab[PROFILE_A_APP_ID].char_handle,
+    //                                 sizeof(data), 
+    //                                 audio_data,
+    //                                 ESP_GATT_WRITE_TYPE_NO_RSP,
+    //                                 ESP_GATT_AUTH_REQ_NONE);
 }
 
 static void hive_report_task(void *params)
 {
     while(1) {
-
+        ESP_LOGI(GATTC_TAG, "HIVE TASK START");
         get_sensor_data();
         //ESP_LOGI(GATTC_TAG, "Sensor Data:\n weight %lu", data.weight);
-
-        if (!can_send_write) {
-            int res = xSemaphoreTake(gattc_semaphore, portMAX_DELAY);
-            assert(res == pdTRUE);
-        } else {
-            if (is_connect) {
-                bool sent = send_data_to_server();
-                if(sent) {                    
-                    vTaskDelay(HIVE_TASK_PERIOD / portTICK_PERIOD_MS);
-                } else { 
-                    vTaskDelay(HIVE_RETRY_PERIOD / portTICK_PERIOD_MS);
-                }
-            }
-        }
+        send_data_to_server();
+        ESP_LOGI(GATTC_TAG, "HIVE TASK END");
+        vTaskDelay(HIVE_TASK_PERIOD / portTICK_PERIOD_MS);
     }
 
 }
