@@ -122,19 +122,19 @@ static const i2s_config_t i2s_config = {
     .mode = I2S_MODE_MASTER | I2S_MODE_RX,
     .sample_rate = I2S_SAMPLE_RATE,
     .bits_per_sample = I2S_SAMPLE_BITS,
-    .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
+    .channel_format = I2S_CHANNEL_FMT_ONLY_RIGHT,
     .communication_format = I2S_COMM_FORMAT_I2S,
     .intr_alloc_flags = 0, // default interrupt priority
     .dma_buf_count = 8,
     .dma_buf_len = 64,
-    .use_apll = true
+    .use_apll = false
 };
 
 static const i2s_pin_config_t pin_config = {
     .bck_io_num = 26, //ESP32 sends clock
-    .ws_io_num = I2S_PIN_NO_CHANGE,
+    .ws_io_num = 25,
     .data_out_num = I2S_PIN_NO_CHANGE,
-    .data_in_num = 22 //ESP32 takes in data
+    .data_in_num = 33 //ESP32 takes in data
 };
 
 
