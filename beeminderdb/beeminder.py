@@ -36,6 +36,6 @@ class BeeMinder:
         String -> HiveDoc | False
         """
         result = self.db.Hives.find_one({"identifier": hive_id})
-        if result == None
+        if result == None:
             return False
         return result
