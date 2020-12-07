@@ -24,7 +24,6 @@ Use the following command:
 python -m pip install dnspython
 ```
 
-NOTE: other dependencides will need to be added, I will fix this later
 ## Usage
 This package contains the BeeMinder class that is used to send data to the 
 BeeMinder backed by our base station.

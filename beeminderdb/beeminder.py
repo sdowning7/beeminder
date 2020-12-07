@@ -1,9 +1,16 @@
 from pymongo import MongoClient
 import pprint
+import datetime
 
 class BeeMinder:
-    old_user = "5fc541100dab7243052b2a23"
-    joe_user = "5fc8516e6e63c036f9d9ad08"
+
+    dummy_data = {
+        "temp" : 123,
+        "humidity" : 321,
+        "weight" : 100,
+        "audio" : None
+    }
+
     default_atlas_str = "mongodb+srv://base_station:eXSGDTaNpdQOhUKS@beeminder.tbykz.mongodb.net/BeeMinder"
     def __init__(self, atlas_str=default_atlas_str):
         self.client = MongoClient(atlas_str)
@@ -15,9 +22,9 @@ class BeeMinder:
         result = self.db[collection].update_many(db_filter, db_update)
         return (result.matched_count, result.modified_count)
 
-    def add_report(self, hive_id, sensor_data):
+    def add_report(self, hive_identifier, sensor_data):
         """
-        Adds a ReportBoc to the database and updates the hive with the given hive_id,
+        Adds a ReportBoc to the database and updates the hive with the given hive_identifier,
         returns a String representation of the report_id
         If no hive exists then the report is not added to the database and False is returned.
 
@@ -25,9 +32,25 @@ class BeeMinder:
         
         String, SensorData -> String | False
         """
-        hive_filter = {"identifier": hive_id}
-        hive_update = {"$addToSet":{"reports":""}}
-
+        hive = self.get_hive(hive_identifier)
+        if hive is None:
+            return False
+        dt = datetime.datetime.now().isoformat()
+        report = {
+            "_owner" : hive["_owner"],
+            "time_recorded" : dt,
+            "sensor_data" : sensor_data
+        }
+        report_id = False
+        with self.client.start_session() as session:
+            with session.start_transaction():
+                ins_res = self.db.Reports.insert_one(report)
+                report_id = ins_res.inserted_id
+                self.db.Hives.update_one(
+                    {"_id" : hive["_id"]},
+                    {"$addToSet": {"reports": report_id}})
+        return report_id
+                
     def get_hive(self, hive_id):
         """
         fetches the hive document with the specified hive_id from the database. 
@@ -39,3 +62,10 @@ class BeeMinder:
         if result == None:
             return False
         return result
+
+    # def translate_report(self, report_id):
+    #     """
+    #     Increases the reports fields to include the flags array and 
+    #     replaces the audio data with an fft array
+    #     """
+    #     result = self.db.Reports.find_one
