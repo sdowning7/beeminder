@@ -1,0 +1,15 @@
+{
+    
+    "temp": 70,
+    "humidity": 45,
+    "weight": 65,
+    "bee_flags": {
+        "queen_present" : true,
+        "multiple_queen" : false,
+        "possible_mites" : null,
+        "three_day_in_range" : true,
+        "six_day_in_range" : false,
+        "nine_day_in_range" : null
+    },
+    "fft_data" : [1.23, 2.34, 4.56, 5.67, 6.78, 7.89, 8.90, 9.10]
+}

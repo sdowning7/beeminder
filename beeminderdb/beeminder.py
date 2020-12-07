@@ -35,7 +35,7 @@ class BeeMinder:
         hive = self.get_hive(hive_identifier)
         if hive is None:
             return False
-        dt = datetime.datetime.now().isoformat()
+        dt = datetime.datetime.now()
         report = {
             "_owner" : hive["_owner"],
             "time_recorded" : dt,
