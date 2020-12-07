@@ -63,7 +63,6 @@
 #define FLASH_ERASE_SIZE            (FLASH_RECORD_SIZE%FLASH_SECTOR_SIZE==0) ? FLASH_RECORD_SIZE : FLASH_RECORD_SIZE + (FLASH_SECTOR_SIZE - FLASH_RECORD_SIZE % FLASH_SECTOR_SIZE)
 #define PARTITION_NAME              "storage"
 
-<<<<<<< Updated upstream
 #define _I2C_NUMBER(num) I2C_NUM_##num
 #define I2C_NUMBER(num) _I2C_NUMBER(num)
 
@@ -85,10 +84,6 @@
 
 
 static const char remote_device_name[] = "HIVE_SERVER";
-=======
-static const char remote_device_name[] = "HIVE BASE"; //Connect to Pi
-//static const char remote_device_name[] = "HIVE_SERVER";  //Connect to ESP32
->>>>>>> Stashed changes
 static bool connect    = false;
 static bool get_server = false;
 static bool can_send_write = false;
@@ -809,27 +804,12 @@ static void send_data_to_server()
 static void hive_report_task(void *params)
 {
     while(1) {
-<<<<<<< Updated upstream
         ESP_LOGI(GATTC_TAG, "HIVE TASK START");
         get_sensor_data();
         ESP_LOGI(GATTC_TAG, "Sensor Data:\n weight %lu", data.weight);
         send_data_to_server();
         ESP_LOGI(GATTC_TAG, "HIVE TASK END");
         vTaskDelay(HIVE_TASK_PERIOD / portTICK_PERIOD_MS);
-=======
-        if(connect){
-            ESP_LOGI(GATTC_TAG, "HIVE TASK START");
-            get_sensor_data();
-            //ESP_LOGI(GATTC_TAG, "Sensor Data:\n weight %lu", data.weight);
-            send_data_to_server();
-            ESP_LOGI(GATTC_TAG, "HIVE TASK END");
-            vTaskDelay(HIVE_TASK_PERIOD / portTICK_PERIOD_MS);
-        }
-        else {
-            vTaskDelay(HIVE_RETRY_PERIOD/portTICK_PERIOD_MS);
-        }
-
->>>>>>> Stashed changes
     }
 
 }
@@ -922,7 +902,6 @@ void app_main(void)
     //     ESP_LOGI(GATTC_TAG, "MALLOC FAILED");
     //     return;
     // }
-<<<<<<< Updated upstream
 
     ESP_ERROR_CHECK(i2c_master_init());
     //calibration command for temp/humidity sensor
@@ -930,11 +909,6 @@ void app_main(void)
     *data_wr = 0xBE;
     i2c_master_write_slave(0, data_wr, 1);
     usleep(10000);
-
-    xTaskCreate(&hive_report_task, "hive_report_task", 4096, NULL, 3, NULL);
-=======
-   
->>>>>>> Stashed changes
 
     gattc_semaphore = xSemaphoreCreateBinary();
     if (!gattc_semaphore) {
