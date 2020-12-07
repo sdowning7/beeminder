@@ -83,7 +83,8 @@
 #define NACK_VAL 0x1                            /*!< I2C nack value */
 
 
-static const char remote_device_name[] = "HIVE_SERVER";
+//static const char remote_device_name[] = "HIVE_SERVER";     //Use this one for connecting to ESP
+static const char remote_device_name[] = "HIVE BASE";       //Use this one for connecting to Pi
 static bool connect    = false;
 static bool get_server = false;
 static bool can_send_write = false;
@@ -720,6 +721,7 @@ static esp_err_t i2c_master_init(void)
 
 static void get_sensor_data()
 {
+    ESP_LOGI(GATTC_TAG, "ENTER DATA COLLECTION");
     //gather the data from sensors
     uint8_t *th_data = (uint8_t *)malloc(DATA_LENGTH);
     uint8_t *data_wr = (uint8_t *)malloc(DATA_LENGTH);
@@ -740,6 +742,7 @@ static void get_sensor_data()
     data_wr[1] = 0x33;
     data_wr[2] = 0x00;
 
+    ESP_LOGI(GATTC_TAG, "COLLECTING DATA");
     i2c_master_write_slave(0, data_wr, 3);
     usleep(80000);
     *th_status = 0;
@@ -750,6 +753,8 @@ static void get_sensor_data()
         }
         usleep(1000);
     }
+
+    ESP_LOGI(GATTC_TAG, "CALCULATING DATA");
     //humidity calculations
     data.humid = th_data[1];
     data.humid <<= 8;
