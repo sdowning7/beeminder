@@ -3,3 +3,5 @@ sdkconfig
 sdkconfig.old
 beeminder.code-workspace
 .vscode/
+beeminderdb/BeeMinder.egg-info
+__pycache__
