@@ -6,12 +6,16 @@
    software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
    CONDITIONS OF ANY KIND, either express or implied.
 */
+
 #include <stdint.h>
 #include <string.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include "nvs.h"
 #include "nvs_flash.h"
+#include <unistd.h>
+#include <time.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -29,6 +33,8 @@
 #include "driver/uart.h"
 #include "driver/rtc_io.h"
 #include "driver/i2s.h"
+#include "driver/i2c.h"
+#include "driver/gpio.h"
 #include "freertos/queue.h"
 
 
@@ -56,6 +62,26 @@
 #define FLASH_RECORD_SIZE           (I2S_SAMPLE_RATE*I2S_SAMPLE_BITS/8*5)
 #define FLASH_ERASE_SIZE            (FLASH_RECORD_SIZE%FLASH_SECTOR_SIZE==0) ? FLASH_RECORD_SIZE : FLASH_RECORD_SIZE + (FLASH_SECTOR_SIZE - FLASH_RECORD_SIZE % FLASH_SECTOR_SIZE)
 #define PARTITION_NAME              "storage"
+
+#define _I2C_NUMBER(num) I2C_NUM_##num
+#define I2C_NUMBER(num) _I2C_NUMBER(num)
+
+#define DATA_LENGTH 16                  /*!< Data buffer length of test buffer */
+#define DELAY_TIME_BETWEEN_ITEMS_MS 1000 /*!< delay time between different test items */
+
+#define I2C_MASTER_SCL_IO 16               /*!< gpio number for I2C master clock */
+#define I2C_MASTER_SDA_IO 17               /*!< gpio number for I2C master data  */
+#define I2C_MASTER_NUM 0 /*!< I2C port number for master dev */
+#define I2C_MASTER_FREQ_HZ 100000        /*!< I2C master clock frequency */
+
+#define ESP_SLAVE_ADDR 0x38 /*!< ESP32 slave address, you can set any 7bit value */
+#define WRITE_BIT I2C_MASTER_WRITE              /*!< I2C master write */
+#define READ_BIT I2C_MASTER_READ                /*!< I2C master read */
+#define ACK_CHECK_EN 0x1                        /*!< I2C master will check ack from slave*/
+#define ACK_CHECK_DIS 0x0                       /*!< I2C master will not check ack from slave */
+#define ACK_VAL 0x0                             /*!< I2C ack value */
+#define NACK_VAL 0x1                            /*!< I2C nack value */
+
 
 static const char remote_device_name[] = "HIVE_SERVER";
 static bool connect    = false;
@@ -136,6 +162,7 @@ static const i2s_pin_config_t pin_config = {
     .data_out_num = I2S_PIN_NO_CHANGE,
     .data_in_num = 33 //ESP32 takes in data
 };
+
 
 
 typedef struct {
@@ -640,10 +667,59 @@ void send_audio_from_flash() {
     ESP_LOGI(GATTC_TAG,"Sending from flash end");
 }
 
+/**
+ * @brief i2c master initialization
+ */
+
+static esp_err_t i2c_master_read_slave(i2c_port_t i2c_num, uint8_t *data_rd, size_t size){
+    if (size == 0) {
+        return ESP_OK;
+    }
+    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+    i2c_master_start(cmd);
+    i2c_master_write_byte(cmd, (ESP_SLAVE_ADDR << 1) | READ_BIT, ACK_CHECK_EN);
+    if (size > 1) {
+        i2c_master_read(cmd, data_rd, size - 1, ACK_VAL);
+    }
+    i2c_master_read_byte(cmd, data_rd + size - 1, NACK_VAL);
+    i2c_master_stop(cmd);
+    esp_err_t ret = i2c_master_cmd_begin(i2c_num, cmd, 1000 / portTICK_RATE_MS);
+    i2c_cmd_link_delete(cmd);
+    return ret;
+}
+
+static esp_err_t i2c_master_write_slave(i2c_port_t i2c_num, uint8_t *data_wr, size_t size)
+{
+    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+    i2c_master_start(cmd);
+    i2c_master_write_byte(cmd, (ESP_SLAVE_ADDR << 1) | WRITE_BIT, ACK_CHECK_EN);
+    i2c_master_write(cmd, data_wr, size, ACK_CHECK_EN);
+    i2c_master_stop(cmd);
+    esp_err_t ret = i2c_master_cmd_begin(i2c_num, cmd, 1000 / portTICK_RATE_MS);
+    i2c_cmd_link_delete(cmd);
+    return ret;
+}
+
+static esp_err_t i2c_master_init(void)
+{
+    int i2c_master_port = I2C_MASTER_NUM;
+    i2c_config_t conf;
+    conf.mode = I2C_MODE_MASTER;
+    conf.sda_io_num = I2C_MASTER_SDA_IO;
+    conf.sda_pullup_en = GPIO_PULLUP_DISABLE;
+    conf.scl_io_num = I2C_MASTER_SCL_IO;
+    conf.scl_pullup_en = GPIO_PULLUP_DISABLE;
+    conf.master.clk_speed = I2C_MASTER_FREQ_HZ;
+    i2c_param_config(i2c_master_port, &conf);
+    return i2c_driver_install(i2c_master_port, conf.mode, 0, 0, 0);
+}
+
 static void get_sensor_data()
 {
-    //gether the data from sensors
-
+    //gather the data from sensors
+    uint8_t *th_data = (uint8_t *)malloc(DATA_LENGTH);
+    uint8_t *data_wr = (uint8_t *)malloc(DATA_LENGTH);
+    uint8_t *th_status = (uint8_t *)malloc(DATA_LENGTH);
     //weight sensor
     unsigned long weight = 0;
     vTaskDelay(1/portTICK_PERIOD_MS);
@@ -655,12 +731,40 @@ static void get_sensor_data()
     }
     weight = weight ^ 0x800000;
 
+    //hardware specific handshake command
+    data_wr[0] = 0xAC;
+    data_wr[1] = 0x33;
+    data_wr[2] = 0x00;
+
+    i2c_master_write_slave(0, data_wr, 3);
+    usleep(80000);
+    *th_status = 0;
+    while((*th_status&0x80) == 0) {
+        i2c_master_read_slave(0, th_status, 1);
+        if ((*th_status&0x80) == 0) {
+            i2c_master_read_slave(0, th_data, 6);
+        }
+        usleep(1000);
+    }
+    //humidity calculations
+    data.humid = th_data[1];
+    data.humid <<= 8;
+    data.humid += th_data[2];
+    data.humid <<=4;
+    data.humid += th_data[3] >> 4;
+    data.humid = data.humid/10485776;
+
+    //temperature calculations
+    data.temp = th_data[3]&0x0F;
+    data.temp <<= 8;
+    data.temp += th_data[4];
+    data.temp <<=8;
+    data.temp += th_data[5];
+    data.temp = ((data.temp/10485776*200)-50)*9/5+32;
+
     data.weight = weight;    
-    data.temp = 0x11111111;
-    data.humid = 0xFFFFFFFF;
     //Record the audio data to flash
     record_audio_to_flash();
-
 }
 
 static void send_data_to_server()
@@ -691,7 +795,7 @@ static void hive_report_task(void *params)
     while(1) {
         ESP_LOGI(GATTC_TAG, "HIVE TASK START");
         get_sensor_data();
-        //ESP_LOGI(GATTC_TAG, "Sensor Data:\n weight %lu", data.weight);
+        ESP_LOGI(GATTC_TAG, "Sensor Data:\n weight %lu", data.weight);
         send_data_to_server();
         ESP_LOGI(GATTC_TAG, "HIVE TASK END");
         vTaskDelay(HIVE_TASK_PERIOD / portTICK_PERIOD_MS);
@@ -760,6 +864,20 @@ void app_main(void)
         ESP_LOGE(GATTC_TAG, "set local  MTU failed, error code = %x", local_mtu_ret);
     }
 
+    gpio_config_t io_conf;
+    //disable interrupt
+    io_conf.intr_type = GPIO_PIN_INTR_DISABLE;
+    //set as output mode
+    io_conf.mode = GPIO_MODE_OUTPUT;
+    //bit mask of the pins that you want to set,e.g.GPIO18/19
+    io_conf.pin_bit_mask = ((1ULL<<WEIGHT_CLK) | (1ULL<<WEIGHT_GPIO));
+    //disable pull-down mode
+    io_conf.pull_down_en = 0;
+    //disable pull-up mode
+    io_conf.pull_up_en = 0;
+    //configure GPIO with the given settings
+    gpio_config(&io_conf);
+
     gpio_pad_select_gpio(WEIGHT_GPIO);
     gpio_set_direction(WEIGHT_GPIO, GPIO_MODE_INPUT);
     gpio_pad_select_gpio(WEIGHT_CLK);
@@ -773,7 +891,14 @@ void app_main(void)
     //     ESP_LOGI(GATTC_TAG, "MALLOC FAILED");
     //     return;
     // }
-   
+
+    ESP_ERROR_CHECK(i2c_master_init());
+    //calibration command for temp/humidity sensor
+    uint8_t *data_wr = (uint8_t *)malloc(DATA_LENGTH);
+    *data_wr = 0xBE;
+    i2c_master_write_slave(0, data_wr, 1);
+    usleep(10000);
+
     xTaskCreate(&hive_report_task, "hive_report_task", 4096, NULL, 3, NULL);
 
     gattc_semaphore = xSemaphoreCreateBinary();
