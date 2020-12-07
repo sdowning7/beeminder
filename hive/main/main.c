@@ -63,6 +63,7 @@
 #define FLASH_ERASE_SIZE            (FLASH_RECORD_SIZE%FLASH_SECTOR_SIZE==0) ? FLASH_RECORD_SIZE : FLASH_RECORD_SIZE + (FLASH_SECTOR_SIZE - FLASH_RECORD_SIZE % FLASH_SECTOR_SIZE)
 #define PARTITION_NAME              "storage"
 
+<<<<<<< Updated upstream
 #define _I2C_NUMBER(num) I2C_NUM_##num
 #define I2C_NUMBER(num) _I2C_NUMBER(num)
 
@@ -84,6 +85,10 @@
 
 
 static const char remote_device_name[] = "HIVE_SERVER";
+=======
+static const char remote_device_name[] = "HIVE BASE"; //Connect to Pi
+//static const char remote_device_name[] = "HIVE_SERVER";  //Connect to ESP32
+>>>>>>> Stashed changes
 static bool connect    = false;
 static bool get_server = false;
 static bool can_send_write = false;
@@ -186,7 +191,7 @@ static struct gattc_profile_inst gl_profile_tab[PROFILE_NUM] = {
 static void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if, esp_ble_gattc_cb_param_t *param)
 {
     esp_ble_gattc_cb_param_t *p_data = (esp_ble_gattc_cb_param_t *)param;
-
+    ESP_LOGE(GATTC_TAG, "NEW EVENT: %d", event);
     switch (event) {
     case ESP_GATTC_REG_EVT:{
         ESP_LOGI(GATTC_TAG, "REG_EVT");
@@ -378,6 +383,7 @@ static void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_
         }
         ESP_LOGI(GATTC_TAG, "write descr success ");
 
+        ESP_LOGW(GATTC_TAG, "CAN SEND WRITE: TRUE");
         can_send_write = true;
         xSemaphoreGive(gattc_semaphore);
 
@@ -407,8 +413,10 @@ static void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_
     }
     case ESP_GATTC_CONGEST_EVT:{
         if (param->congest.congested) {
+            ESP_LOGW(GATTC_TAG, "CAN SEND WRITE: FALSE");
             can_send_write = false;
         } else {
+            ESP_LOGW(GATTC_TAG, "CAN SEND WRITE: TRUE");
             can_send_write = true;
             xSemaphoreGive(gattc_semaphore);
         }
@@ -536,15 +544,16 @@ static void esp_gattc_cb(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if, esp
 
 static void safe_send(uint16_t dsize, uint8_t* daddr) {
     while(1){
-       
         if (!can_send_write) {
+            ESP_LOGE(GATTC_TAG, "SEMAPHORE");
             int res = xSemaphoreTake(gattc_semaphore, portMAX_DELAY); 
             assert(res == pdTRUE);
         } 
         else {
             if (is_connect) {
                 int free_buff_num = esp_ble_get_cur_sendable_packets_num(gl_profile_tab[PROFILE_A_APP_ID].conn_id);
-                if(free_buff_num > 0) {                  
+                if(free_buff_num > 0) {            
+                    ESP_LOGE(GATTC_TAG, "BUFFER IS OPEN LETS SEND %d BYTES", dsize);      
                     esp_ble_gattc_write_char(gl_profile_tab[PROFILE_A_APP_ID].gattc_if,
                                                     gl_profile_tab[PROFILE_A_APP_ID].conn_id,
                                                     gl_profile_tab[PROFILE_A_APP_ID].char_handle,
@@ -642,7 +651,7 @@ void send_audio_from_flash() {
         //send data
         //i2s_write(EXAMPLE_I2S_NUM, i2s_write_buff, FLASH_SECTOR_SIZE, &bytes_written, portMAX_DELAY);
         safe_send(MAX_SEND, flash_read_buff);
-
+        vTaskDelay(10/portTICK_PERIOD_MS);
         // bool sent = false;
         // while(!sent) {
         //     int free_buff_num = esp_ble_get_cur_sendable_packets_num(gl_profile_tab[PROFILE_A_APP_ID].conn_id);
@@ -769,9 +778,16 @@ static void get_sensor_data()
 
 static void send_data_to_server()
 {             
-       
+    
     safe_send(sizeof(data), (uint8_t*)&data);
+    vTaskDelay(1/portTICK_PERIOD_MS);
+    
     send_audio_from_flash();
+    vTaskDelay(1000/portTICK_PERIOD_MS);
+    
+    uint32_t end_data = 0xFAFAFAFA;
+    ESP_LOGW(GATTC_TAG,"SENDING ENDING DATA");
+    safe_send(sizeof(uint32_t), (uint8_t*)&end_data);
     
     
     // esp_ble_gattc_write_char(gl_profile_tab[PROFILE_A_APP_ID].gattc_if,
@@ -793,12 +809,27 @@ static void send_data_to_server()
 static void hive_report_task(void *params)
 {
     while(1) {
+<<<<<<< Updated upstream
         ESP_LOGI(GATTC_TAG, "HIVE TASK START");
         get_sensor_data();
         ESP_LOGI(GATTC_TAG, "Sensor Data:\n weight %lu", data.weight);
         send_data_to_server();
         ESP_LOGI(GATTC_TAG, "HIVE TASK END");
         vTaskDelay(HIVE_TASK_PERIOD / portTICK_PERIOD_MS);
+=======
+        if(connect){
+            ESP_LOGI(GATTC_TAG, "HIVE TASK START");
+            get_sensor_data();
+            //ESP_LOGI(GATTC_TAG, "Sensor Data:\n weight %lu", data.weight);
+            send_data_to_server();
+            ESP_LOGI(GATTC_TAG, "HIVE TASK END");
+            vTaskDelay(HIVE_TASK_PERIOD / portTICK_PERIOD_MS);
+        }
+        else {
+            vTaskDelay(HIVE_RETRY_PERIOD/portTICK_PERIOD_MS);
+        }
+
+>>>>>>> Stashed changes
     }
 
 }
@@ -891,6 +922,7 @@ void app_main(void)
     //     ESP_LOGI(GATTC_TAG, "MALLOC FAILED");
     //     return;
     // }
+<<<<<<< Updated upstream
 
     ESP_ERROR_CHECK(i2c_master_init());
     //calibration command for temp/humidity sensor
@@ -900,11 +932,15 @@ void app_main(void)
     usleep(10000);
 
     xTaskCreate(&hive_report_task, "hive_report_task", 4096, NULL, 3, NULL);
+=======
+   
+>>>>>>> Stashed changes
 
     gattc_semaphore = xSemaphoreCreateBinary();
     if (!gattc_semaphore) {
         ESP_LOGE(GATTC_TAG, "%s, init fail, the gattc semaphore create fail.", __func__);
         return;
     }
+    xTaskCreate(&hive_report_task, "hive_report_task", 4096, NULL, 3, NULL);
 
 }
