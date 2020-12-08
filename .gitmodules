@@ -1,0 +1,6 @@
+[submodule "beeminder_base_processing/json-builder"]
+	path = beeminder_base_processing/json-builder
+	url = https://github.com/udp/json-builder.git
+[submodule "beeminder_base_processing/kissfft"]
+	path = beeminder_base_processing/kissfft
+	url = https://github.com/mborgerding/kissfft.git
