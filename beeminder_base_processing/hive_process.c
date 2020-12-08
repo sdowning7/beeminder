@@ -56,12 +56,13 @@ struct hivedata{
 //read wave header
  int read_hivedata(FILE *fp, struct raw_hivedata *dest) {
    if (!dest || !fp) {
+	printf("could not find file \n");
      return -ENOENT;
    }
 
    fseek(fp, 0, SEEK_SET);
    fread(dest, sizeof(struct raw_hivedata), 1, fp);
-   printf("done read hive data");
+   printf("done read hive data \n");
    return 0;
  }
  
@@ -129,7 +130,7 @@ void FFT_handle(FILE *fp, float* master_fft_array) {
 	}
 	kiss_fftr_free(cfg);
 	fclose(fp);
-	printf("finished fft");
+	printf("finished fft \n");
 }
 
 //compares fft output of the file to expected values and modifies hive data file
@@ -198,6 +199,7 @@ int audio_compare(float *fft_array, int numsamples, struct hivedata *hive) {
 } 
 
  int main(int argc, char** argv) {
+	printf("starting hive process \n");
    FILE* fp;
    FILE* hivefp;
    struct hivedata hive;
@@ -209,11 +211,13 @@ int audio_compare(float *fft_array, int numsamples, struct hivedata *hive) {
    th_handle(&raw_hive, &hive);
    audio_compare(fft_array, sizeof(fft_array)/4, &hive);
    hivefp = stdout;
-   fseek(hivefp, 0, SEEK_SET);
+   //fseek(hivefp, 0, SEEK_SET);
+	
+	printf("arrived at json object creation \n");
 
 	json_value *arr = json_array_new(0);
 	json_value *bee_flags = json_object_new(0);
-	for (int i = 0; i < sizeof(fft_array); i++) {
+	for (int i = 0; i < sizeof(fft_array)/sizeof(float); i++) {
 			json_array_push(arr, json_double_new((double)fft_array[i]));
 	}
 	json_object_push(bee_flags, "queen_present", json_integer_new((int)hive.bee_flags[0]));
