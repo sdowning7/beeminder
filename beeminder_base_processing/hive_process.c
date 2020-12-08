@@ -35,7 +35,7 @@
 #define FREQ_6DAY_BEE 225
 #define FREQ_9DAY_BEE 190
 #define FREQ_QUEEN 400
-#define SAMPLERATE 16000
+#define SAMPLE_RATE 16000
 
 #define PI 3.141592653
 
@@ -112,7 +112,7 @@ void FFT_handle(FILE *fp, float* master_fft_array) {
 		}
 		//window the buffer
 		for(int i = 0; i < sizeof(int_buf)/2; i++) {
-			buf[i] = (float)int_buf[i]*0.5*(1-cos(2*PI*i/(BUF_SIZE - 1))));
+			buf[i] = (float)int_buf[i]*0.5*(1-cos(2*PI*i/(BUF_SIZE - 1)));
 		}
 		//run fft on this window, calculate magnitudes and add it to master array
 		kiss_fftr(cfg, buf, fft_output);
@@ -138,7 +138,7 @@ int audio_compare(float *fft_array, int numsamples, struct hivedata *hive) {
 	float bee_age_dist[] = {17.9, 28.1, 34.6, 47.5, 33.2, 41.6};
 
 	//frequency bin size is 4Hz
-	int freq_bin_size = hdr->SAMPLERATE/numsamples;
+	int freq_bin_size = SAMPLE_RATE/numsamples;
 	//calculate amplitudes of different bee ages
 	float amp_3day_bee = fft_array[FREQ_4DAY_BEE/freq_bin_size];
 	float amp_6day_bee = fft_array[FREQ_6DAY_BEE/freq_bin_size];
@@ -148,7 +148,7 @@ int audio_compare(float *fft_array, int numsamples, struct hivedata *hive) {
 	//assuming the other 20% of the bees are still in the hive, 
 	//we will need to scale the amplitude by a factor of 1.2.
 	//since the queen is only 1 bee, we do not include her in this calculation.
-	float amp_total_bee = 1.2*(amp_4day_bee + amp_6day_bee + amp_9day_bee);
+	float amp_total_bee = 1.2*(amp_3day_bee + amp_6day_bee + amp_9day_bee);
 	for (int i = 0; i < sizeof(hive->bee_flags); i++) {
 		hive->bee_flags[i] = OK_FLAG;
 	}
@@ -213,18 +213,18 @@ int audio_compare(float *fft_array, int numsamples, struct hivedata *hive) {
 	for (int i = 0; i < sizeof(fft_array); i++) {
 			json_array_push(arr, json_double_new((double)fft_array[i]));
 	}
-	json_object_push(bee_flags, "queen_present", json_integer_new((int)hivedata.bee_flags[0]));
-	json_object_push(bee_flags, "multiple_queen", json_integer_new((int)hivedata.bee_flags[1]));
-	json_object_push(bee_flags, "possible_mites", json_integer_new((int)hivedata.bee_flags[2]));
-	json_object_push(bee_flags, "three_day_in_range", json_integer_new((int)hivedata.bee_flags[3]));
-	json_object_push(bee_flags, "six_day_in_range", json_integer_new((int)hivedata.bee_flags[4]));
-	json_object_push(bee_flags, "nine_day_in_range", json_integer_new((int)hivedata.bee_flags[0]));
+	json_object_push(bee_flags, "queen_present", json_integer_new((int)hive.bee_flags[0]));
+	json_object_push(bee_flags, "multiple_queen", json_integer_new((int)hive.bee_flags[1]));
+	json_object_push(bee_flags, "possible_mites", json_integer_new((int)hive.bee_flags[2]));
+	json_object_push(bee_flags, "three_day_in_range", json_integer_new((int)hive.bee_flags[3]));
+	json_object_push(bee_flags, "six_day_in_range", json_integer_new((int)hive.bee_flags[4]));
+	json_object_push(bee_flags, "nine_day_in_range", json_integer_new((int)hive.bee_flags[0]));
 	
 	json_value *output = json_object_new(0);
 	json_object_push(output, "temp", json_integer_new((int)hivedata.temperature));
 	json_object_push(output, "humidity", json_integer_new((int)hivedata.humidity));
 	json_object_push(output, "weight", json_integer_new((int)hivedata.weight));
-	json_object_push(output, "bee_flags", bee_flags));
+	json_object_push(output, "bee_flags", bee_flags);
 	json_object_push(output, "fft_data", arr);
 
 	char *buf = malloc(json_measure(output));
