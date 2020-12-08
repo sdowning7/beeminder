@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-import dbus, os
+import dbus, subprocess
 
 
 from beeminder import BeeMinder
@@ -83,13 +83,17 @@ class BaseStationCharacteristic(Characteristic):
     
 
     def runFFT(self, name):
-        pass
+        in_file = open('Data/' + name + '.in', 'r')
+        out_file = open('Data/' + name + '.json', 'w')
+
+        subprocess.run('../beeminder_base_processing/hive_process', 
+                stdin=in_file, stdout=out_file)
  
     def SendToDataBase(self, name):
         try:
             bm = BeeMinder()
             
-            #file_name = 'Data/'+name+'.json'
+            #file_name = 'Data/'+name+'.json' TODO switch this to the real file
             file_name = '../beeminder_base_processing/dummy_data.json'
             print('got here')
             bm.add_report_from_file(name, file_name)
