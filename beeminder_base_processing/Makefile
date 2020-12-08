@@ -18,7 +18,7 @@ kiss_fftr.o: $(KISS_TOOL_DIR)/kiss_fftr.c
 kiss_fft.o: $(KISS_DIR)/kiss_fft.c
 	$(CC) -c $(INCDIRS) $< -o $@
 
-json_builder.o $(JSON_DIR)/json-builder.c
+json_builder.o: $(JSON_DIR)/json-builder.c
 	$(CC) -c $(INCDIRS) $< -o $@
 
 clean:
