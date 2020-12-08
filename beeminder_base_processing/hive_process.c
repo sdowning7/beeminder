@@ -61,6 +61,7 @@ struct hivedata{
 
    fseek(fp, 0, SEEK_SET);
    fread(dest, sizeof(struct raw_hivedata), 1, fp);
+   printf("done read hive data");
    return 0;
  }
  
@@ -91,6 +92,7 @@ struct hivedata{
 	else {
 		hive->temperature_flag = OK_FLAG;
 	}
+	printf("finished th handle");
  }
 
 //handles the FFT process for the entire WAVE file.   
@@ -127,6 +129,7 @@ void FFT_handle(FILE *fp, float* master_fft_array) {
 	}
 	kiss_fftr_free(cfg);
 	fclose(fp);
+	printf("finished fft");
 }
 
 //compares fft output of the file to expected values and modifies hive data file
@@ -187,10 +190,10 @@ int audio_compare(float *fft_array, int numsamples, struct hivedata *hive) {
 		}
 	}
 	
-	// printf("4 Day Bee percentage: %f\n", amp_4day_bee_percentage);
-	// printf("6 Day Bee percentage: %f\n", amp_6day_bee_percentage);
-	// printf("9 Day Bee percentage: %f\n", amp_9day_bee_percentage);
-	// printf("Queen in hive?: %d\n", hive->bee_flags[3]);
+	 printf("3 Day Bee percentage: %f\n", amp_3day_bee_percentage);
+	 printf("6 Day Bee percentage: %f\n", amp_6day_bee_percentage);
+	 printf("9 Day Bee percentage: %f\n", amp_9day_bee_percentage);
+	 printf("Queen in hive?: %d\n", hive->bee_flags[3]);
 	return 0;
 } 
 
