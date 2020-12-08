@@ -221,9 +221,9 @@ int audio_compare(float *fft_array, int numsamples, struct hivedata *hive) {
 	json_object_push(bee_flags, "nine_day_in_range", json_integer_new((int)hive.bee_flags[0]));
 	
 	json_value *output = json_object_new(0);
-	json_object_push(output, "temp", json_integer_new((int)hivedata.temperature));
-	json_object_push(output, "humidity", json_integer_new((int)hivedata.humidity));
-	json_object_push(output, "weight", json_integer_new((int)hivedata.weight));
+	json_object_push(output, "temp", json_integer_new((int)hive.temperature));
+	json_object_push(output, "humidity", json_integer_new((int)hive.humidity));
+	json_object_push(output, "weight", json_integer_new((int)hive.weight));
 	json_object_push(output, "bee_flags", bee_flags);
 	json_object_push(output, "fft_data", arr);
 
