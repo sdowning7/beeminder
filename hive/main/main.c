@@ -52,6 +52,9 @@
 #define WEIGHT_GPIO                 18
 #define WEIGHT_CLK                  19
 
+#define TH_SDA                      17
+#define TH_CLK                      16
+
 #define I2S_SAMPLE_RATE             16000
 #define I2S_SAMPLE_BITS             16
 #define I2S_READ_LEN                16*1024
@@ -870,7 +873,7 @@ void app_main(void)
     //set as output mode
     io_conf.mode = GPIO_MODE_OUTPUT;
     //bit mask of the pins that you want to set,e.g.GPIO18/19
-    io_conf.pin_bit_mask = ((1ULL<<WEIGHT_CLK) | (1ULL<<WEIGHT_GPIO));
+    io_conf.pin_bit_mask = ((1ULL<<TH_CLK) | (1ULL<<TH_SDA));
     //disable pull-down mode
     io_conf.pull_down_en = 0;
     //disable pull-up mode
