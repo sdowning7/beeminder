@@ -1,6 +1,6 @@
 OBJS = json-parser/json.o json_builder.o kiss_fft.o kiss_fftr.o hive_process.o
 
-KISS_DIR = kiss_fft130
+KISS_DIR = kiss_fft
 KISS_TOOL_DIR = $(KISS_DIR)/tools
 JSON_DIR = json-parser
 JSON_BUILD_DIR = json-builder
