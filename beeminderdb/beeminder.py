@@ -34,7 +34,7 @@ class BeeMinder:
         String, ReportDoc.sensor_data -> ReportDoc._id | False
         """
         hive = self.get_hive(hive_identifier)
-        if hive is None:
+        if hive is False:
             return False
         dt = datetime.datetime.now()
         report = {

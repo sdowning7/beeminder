@@ -2,6 +2,8 @@
 
 import dbus, os
 
+
+from beeminder import BeeMinder
 from advertisement import Advertisement
 from service import Application, Service, Characteristic, Descriptor
 
@@ -34,6 +36,7 @@ class BaseStationCharacteristic(Characteristic):
         self.raw_files = {}
         self.packet_count = 0
         Characteristic.__init__(self, self.BASE_CHAR_UUID, ["notify", "write"], service)
+        
 
     def WriteValue(self, value, options):
         path = options['device'].split('/')
@@ -66,15 +69,34 @@ class BaseStationCharacteristic(Characteristic):
                
         elif len(value) == END_DATA_LEN:
             print('finished the sensor upload!')
-            #TODO process and send data
             try:
                 self.raw_files[name].close()
                 print('file closed')
             except Exception as e:
                 print(e)
 
- 
+            #run FFT to get output JSON
+            self.runFFT(name)
+
+            #send output JSON to database
+            self.SendToDataBase(name)    
     
+
+    def runFFT(self, name):
+        pass
+ 
+    def SendToDataBase(self, name):
+        try:
+            bm = BeeMinder()
+            
+            #file_name = 'Data/'+name+'.json'
+            file_name = '../beeminder_base_processing/dummy_data.json'
+            print('got here')
+            bm.add_report_from_file(name, file_name)
+            print('and here')
+        except Exception as e:
+            print(e)
+
     def StartNotify(self):
         pass
 
