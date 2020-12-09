@@ -4,3 +4,6 @@
 [submodule "beeminder_base_processing/kissfft"]
 	path = beeminder_base_processing/kissfft
 	url = https://github.com/mborgerding/kissfft.git
+[submodule "beeminder_base_processing/json-parser"]
+	path = beeminder_base_processing/json-parser
+	url = https://github.com/udp/json-parser.git

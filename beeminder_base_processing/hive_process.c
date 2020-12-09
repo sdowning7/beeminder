@@ -200,18 +200,18 @@ int audio_compare(float *fft_array, int numsamples, struct hivedata *hive) {
 
  int main(int argc, char** argv) {
 	printf("starting hive process \n");
-   FILE* fp;
-   FILE* hivefp;
-   struct hivedata hive;
-   struct raw_hivedata raw_hive;
-   fp = stdin;
-   float fft_array[BUF_SIZE];
-   FFT_handle(fp, fft_array);
-   read_hivedata(fp, &raw_hive);
-   th_handle(&raw_hive, &hive);
-   audio_compare(fft_array, sizeof(fft_array)/4, &hive);
-   hivefp = stdout;
-   //fseek(hivefp, 0, SEEK_SET);
+  	FILE* fp;
+   	FILE* hivefp;
+   	struct hivedata hive;
+   	struct raw_hivedata raw_hive;
+   	fp = stdin;
+   	float fft_array[BUF_SIZE];
+   	FFT_handle(fp, fft_array);
+   	read_hivedata(fp, &raw_hive);
+   	th_handle(&raw_hive, &hive);
+   	audio_compare(fft_array, sizeof(fft_array)/4, &hive);
+   	hivefp = stdout;
+   	//fseek(hivefp, 0, SEEK_SET);
 	
 	printf("arrived at json object creation \n");
 
@@ -237,5 +237,5 @@ int audio_compare(float *fft_array, int numsamples, struct hivedata *hive) {
 	char *buf = malloc(json_measure(output));
 	json_serialize(buf, output);
 
-    fprintf(hivefp, output);
+    	fprintf(hivefp, buf);
  }
