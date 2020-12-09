@@ -237,5 +237,6 @@ int audio_compare(float *fft_array, int numsamples, struct hivedata *hive) {
 	char *buf = malloc(json_measure(output));
 	json_serialize(buf, output);
 
-    	fprintf(hivefp, buf);
+	printf("lksandfldanf;lkasdng;lkdsanf;kdsanflksad\n");
+    	printf("%s\n",buf);
  }

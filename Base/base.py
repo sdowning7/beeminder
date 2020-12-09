@@ -93,11 +93,9 @@ class BaseStationCharacteristic(Characteristic):
         try:
             bm = BeeMinder()
             
-            #file_name = 'Data/'+name+'.json' TODO switch this to the real file
-            file_name = '../beeminder_base_processing/dummy_data.json'
-            print('got here')
+            file_name = 'Data/'+name+'.json' 
             bm.add_report_from_file(name, file_name)
-            print('and here')
+            print('data sent to database')
         except Exception as e:
             print(e)
 
