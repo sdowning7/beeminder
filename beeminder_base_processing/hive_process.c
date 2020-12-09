@@ -62,7 +62,7 @@ struct hivedata{
 
    fseek(fp, 0, SEEK_SET);
    fread(dest, sizeof(struct raw_hivedata), 1, fp);
-   printf("done read hive data \n");
+   //printf("done read hive data \n");
    return 0;
  }
  
@@ -93,7 +93,7 @@ struct hivedata{
 	else {
 		hive->temperature_flag = OK_FLAG;
 	}
-	printf("finished th handle");
+	//printf("finished th handle");
  }
 
 //handles the FFT process for the entire WAVE file.   
@@ -130,7 +130,7 @@ void FFT_handle(FILE *fp, float* master_fft_array) {
 	}
 	kiss_fftr_free(cfg);
 	fclose(fp);
-	printf("finished fft \n");
+	//printf("finished fft \n");
 }
 
 //compares fft output of the file to expected values and modifies hive data file
@@ -191,15 +191,15 @@ int audio_compare(float *fft_array, int numsamples, struct hivedata *hive) {
 		}
 	}
 	
-	 printf("3 Day Bee percentage: %f\n", amp_3day_bee_percentage);
-	 printf("6 Day Bee percentage: %f\n", amp_6day_bee_percentage);
-	 printf("9 Day Bee percentage: %f\n", amp_9day_bee_percentage);
-	 printf("Queen in hive?: %d\n", hive->bee_flags[3]);
+	//printf("3 Day Bee percentage: %f\n", amp_3day_bee_percentage);
+	//printf("6 Day Bee percentage: %f\n", amp_6day_bee_percentage);
+	//printf("9 Day Bee percentage: %f\n", amp_9day_bee_percentage);
+	//printf("Queen in hive?: %d\n", hive->bee_flags[3]);
 	return 0;
 } 
 
  int main(int argc, char** argv) {
-	printf("starting hive process \n");
+	//printf("starting hive process \n");
   	FILE* fp;
    	FILE* hivefp;
    	struct hivedata hive;
@@ -213,7 +213,7 @@ int audio_compare(float *fft_array, int numsamples, struct hivedata *hive) {
    	hivefp = stdout;
    	//fseek(hivefp, 0, SEEK_SET);
 	
-	printf("arrived at json object creation \n");
+	//printf("arrived at json object creation \n");
 
 	json_value *arr = json_array_new(0);
 	json_value *bee_flags = json_object_new(0);
@@ -237,6 +237,5 @@ int audio_compare(float *fft_array, int numsamples, struct hivedata *hive) {
 	char *buf = malloc(json_measure(output));
 	json_serialize(buf, output);
 
-	printf("lksandfldanf;lkasdng;lkdsanf;kdsanflksad\n");
-    	printf("%s\n",buf);
+    	printf("%s",buf);
  }

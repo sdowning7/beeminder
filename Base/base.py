@@ -92,7 +92,7 @@ class BaseStationCharacteristic(Characteristic):
     def SendToDataBase(self, name):
         try:
             bm = BeeMinder()
-            
+            print('attempting upload') 
             file_name = 'Data/'+name+'.json' 
             bm.add_report_from_file(name, file_name)
             print('data sent to database')
